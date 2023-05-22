@@ -30,7 +30,7 @@ output:
   ./script create         | create bucket
   ./script emptyDelete    | empty and delete bucket
   ./script empty          | only empty bucket
-  ./script sync           | sincronizar archivos con el bucket
+  ./script sync           | sync files, current directory
 
 ```
 ## Listado de buckets
