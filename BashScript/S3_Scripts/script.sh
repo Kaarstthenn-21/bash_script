@@ -7,7 +7,7 @@ show_help() {
     echo "  ./script create         | create bucket"
     echo "  ./script emptyDelete    | empty and delete bucket"
     echo "  ./script empty          | only empty bucket"
-    echo "  ./script sync           | sincronizar archivos con el bucket"
+    echo "  ./script sync           | sync files, current directory"
 }
 
 sync_files() {
