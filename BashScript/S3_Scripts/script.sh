@@ -13,69 +13,64 @@ show_help() {
 sync_files() {
     echo 'Introduzca nombre de bucket a sincronizar:'
     read NOMBRE
-    TEST=`aws s3 ls | grep "$NOMBRE\$" | wc -l`
+    TEST=$(aws s3 ls | grep "$NOMBRE$" | wc -l)
     if [ "$TEST" == "0" ]; then
-        aws s3 sync ./ s3://$NOMBRE/templates/ --exclude ".git/*" --exclude "*.ini" --exclude ".sh" --delete || exit 0
+        aws s3 sync ./ s3://$NOMBRE/templates/ --exclude ".git/*" --exclude "*.ini" --exclude ".sh" --delete || exit 1
     fi
     current_directory=$(dirname "$0")
-    # Ejecuta el comando para sincronizar los archivos
     aws s3 sync "$current_directory" "s3://$NOMBRE"
 }
 
-createS3() {
-    echo 'Introduzca un nombre para su bucket S3:'
-    read NOMBRE
-    TEST=`aws s3 ls | grep "$NOMBRE\$" | wc -l`
-    if [ "$TEST" == "0" ]; then
-        aws s3 mb s3://$NOMBRE || exit 0
+create_s3() {
+    read -p "Introduzca un nombre para su bucket S3:" bucket_name
+    validate_bucket "$bucket_name"
+
+    if [[ $? -eq 0 ]]; then
+        echo "El bucket se ha creado correctamente."
     fi
 }
 
-empty(){
+empty() {
     echo 'Introduzca un nombre para su bucket S3:'
     read NOMBRE
     aws s3 rm s3://$NOMBRE --recursive
 }
-emptyAndDeleteBucket(){
+
+emptyAndDeleteBucket() {
     echo 'Introduzca un nombre para su bucket S3:'
     read NOMBRE
     aws s3 rm s3://$NOMBRE --recursive
     aws s3 rb s3://$NOMBRE
 }
 
-list(){
+list() {
     echo 'Listado de buckets'
     aws s3 ls
 }
 
-fullList(){
+fullList() {
     echo 'Listado de depositos buckets'
-    # Ejecuta el comando para listar los buckets de AWS
     buckets=$(aws s3api list-buckets --query 'Buckets[].Name' --output text)
-    
-    # Comprueba si hay buckets y muestra los detalles
+
     if [ -n "$buckets" ]; then
         for bucket in $buckets; do
             echo "Bucket: $bucket"
             echo "Detalles:"
-            
-            # Obtén los detalles del bucket
+
             bucket_encryption=$(aws s3api get-bucket-encryption --bucket "$bucket" --query 'ServerSideEncryptionConfiguration.Rules[].ApplyServerSideEncryptionByDefault.SSEAlgorithm' --output text)
             if [ -n "$bucket_encryption" ]; then
                 echo "Encriptación: $bucket_encryption"
             else
                 echo "Encriptación: No se encontró encriptación configurada."
             fi
-            
-            # Obtén el tamaño del bucket
+
             bucket_size=$(aws s3api list-objects --bucket "$bucket" --query 'length(Contents[])' --output text 2>/dev/null)
             if [ $? -eq 0 ] && [ -n "$bucket_size" ]; then
                 echo "Tamaño: $bucket_size objetos"
             else
                 echo "Tamaño: No contiene objetos"
             fi
-            
-            
+
             echo "------------------------"
         done
     else
@@ -83,39 +78,119 @@ fullList(){
     fi
 }
 
-listObjects(){
-    echo 'Introduzca nombre del bucket para listar sus objetos:'
-    read NOMBRE
-    
-    # Ejecuta el comando para listar los objetos del bucket y obtener detalles
+listObjects() {
+    read -p "Introduzca nombre del bucket para listar sus objetos: " NOMBRE
+
     objects=$(aws s3api list-objects --bucket "$NOMBRE" --query 'Contents[].[Key, Size, LastModified, StorageClass, ServerSideEncryption]' --output text)
 
-    # Comprueba si hay objetos y muestra los detalles
     if [ -n "$objects" ]; then
-    echo "Detalles de los objetos del bucket '$NOMBRE':"
-    echo
+        echo "Detalles de los objetos del bucket '$NOMBRE':"
+        echo
 
-    # Itera sobre los objetos y muestra los detalles
-    while read -r key size last_modified storage_class encryption; do
-        echo "Nombre: $key"
-        echo "Tamaño: $size bytes"
-        echo "Última Modificación: $last_modified"
-        echo "Clase de almacenamiento: $storage_class"
-        echo "Encriptación: $encryption"
-        echo "-------------------------"
-    done <<< "$objects"
+        while read -r key size last_modified storage_class encryption; do
+            echo "Nombre: $key"
+            echo "Tamaño: $size bytes"
+            echo "Última Modificación: $last_modified"
+            echo "Clase de almacenamiento: $storage_class"
+            echo "Encriptación: $encryption"
+            echo "-------------------------"
+        done <<<"$objects"
     else
-    echo "No se encontraron objetos en el bucket '$NOMBRE'."
+        echo "No se encontraron objetos en el bucket '$NOMBRE'."
     fi
 }
 
+function validate_bucket() {
+    bucket_name=$1
+    bucket_exists $bucket_name
+    validate_bucket_name $bucket_name
+    
+    if [ ${#messages[@]} -gt 0 ]; then
+        exit 1
+    else
+        exit 0
+    fi
+}
+
+function validate_bucket_name() {
+    bucket_name=$1
+    local message="Nombre no válido. Intenta con otro nombre."
+    regex="^[a-z0-9.-]{3,63}$"
+    if [[ ! $bucket_name =~ $regex ]]; then
+        echo "$message"
+    fi
+
+}
+
+function bucket_exists() {
+    bucket_name=$1
+    local message="El bucket que deseas crear, ya existe. Intenta con otro nombre."
+    aws s3api head-bucket \
+        --bucket "$bucket_name"
+    # >/dev/null 2>&1
+
+    if [[ ${?} -eq 0 ]]; then
+        echo "$message"
+    fi
+}
+
+menu() {
+    while true; do
+        clear
+        echo "Menu interactivo:"
+        echo "1. Listado de buckets"
+        echo "2. Listado de buckets detallado"
+        echo "3. Crear bucket"
+        echo "4. Eliminar objetos de bucket"
+        echo "5. Eliminar bucket completo"
+        echo "6. Sincronizar archivos con bucket"
+        echo "7. Salir"
+
+        read -p "Seleccione una opción: " choice
+
+        case $choice in
+        1)
+            list
+            ;;
+        2)
+            fullList
+            ;;
+        3)
+            create_s3
+            ;;
+        4)
+            empty
+            ;;
+        5)
+            emptyAndDeleteBucket
+            ;;
+        6)
+            sync_files
+            ;;
+        7)
+            echo "Gracias por usar menú interactivo CLI"
+            echo "************************************************"
+            echo "* Follow me in linkedin : Kaarstthenn Alexander*"
+            echo "************************************************"
+            exit 0
+            ;;
+        *)
+            echo "Opción inválida. Por favor, seleccione una opción válida."
+            ;;
+        esac
+
+        read -p "Presione Enter para continuar..."
+    done
+}
+
 case ${1} in
-    "-h" | "--help" ) show_help; ;;
-    "listAll") fullList; ;;
-    "list") list; ;;
-    "listObjects") listObjects; ;;
-    "create") createS3;  ;;
-    "emptyDelete") emptyAndDeleteBucket; ;;
-    "empty" | "--d" ) empty; ;;
-    "sync" | "--s" ) sync_files; ;;
+"-h" | "--help") show_help ;;
+"listAll") fullList ;;
+"list") list ;;
+"listObjects") listObjects ;;
+"create") create_s3 ;;
+"emptyDelete") emptyAndDeleteBucket ;;
+"empty" | "--d") empty ;;
+"sync" | "--s") sync_files ;;
+"menu") menu ;;
 esac
